@@ -2,9 +2,7 @@
 *.tfstate
 *.tfstate.*
 *.tfvars
-*.tfvars.json
 *.tfplan
-plan.bin
 .terraform/
 .terraform.lock.hcl
 crash.log
@@ -13,30 +11,8 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-.venv/
-*.egg-info/
-dist/
-build/
-*.egg
-
-# Lambda deployment
-lambda_function.zip
-deployment-package.zip
-
-# AWS SAM
-.aws-sam/
-samconfig.toml
+# Terragrunt
+.terragrunt-cache/
 
 # IDE
 .vscode/
@@ -52,12 +28,18 @@ Thumbs.db
 # Logs
 *.log
 
-# Environment variables
+# Runtime
+node_modules/
+venv/
+__pycache__/
+*.pyc
 .env
 .env.local
-.env.production
 
-# Test coverage
-.coverage
-htmlcov/
-.pytest_cache/
+# Archives
+*.zip
+*.tar.gz
+
+# Test outputs
+test-results/
+coverage/
