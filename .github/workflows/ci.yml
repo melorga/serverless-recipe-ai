@@ -7,18 +7,28 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  id-token: write
+  contents: read
+  security-events: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   terraform:
     name: Terraform CI/CD
-    uses: melorga-portfolio/gha-workflows/.github/workflows/terraform.yml@main
+    uses: melorga/gha-workflows/.github/workflows/terraform.yml@claude/audit-portfolio-repos-QH4PL
     with:
-      terraform_version: '1.8.5'
+      terraform_version: '1.9.8'
       working_directory: './infrastructure'
       environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
-      auto_apply: ${{ github.ref == 'refs/heads/main' }}
+      # Auto-apply disabled on main: promote via a GitHub Environment with
+      # required reviewers instead of letting CI yolo to prod.
+      auto_apply: false
     secrets:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      aws_role_arn: ${{ secrets.AWS_OIDC_ROLE_ARN }}
       AWS_REGION: ${{ secrets.AWS_REGION }}
 
   python-tests:
@@ -26,44 +36,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      
+          python-version: '3.12'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov boto3 moto
+          pip install -r tests/requirements.txt
           if [ -f backend/generate-recipe/requirements.txt ]; then
             pip install -r backend/generate-recipe/requirements.txt
           fi
-      
+
       - name: Run tests
         run: |
           pytest tests/ -v --cov=backend/generate-recipe --cov-report=xml
-      
+
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         if: always()
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
 
   security:
     name: Security Scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
-      
+
       - name: Upload Trivy scan results
         uses: github/codeql-action/upload-sarif@v3
         if: always()
@@ -76,16 +86,17 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.8.5'
-      
+          terraform_version: '1.9.8'
+
       - name: Generate terraform-docs
-        uses: terraform-docs/gh-actions@v1.0.0
+        uses: terraform-docs/gh-actions@v1.3.0
         with:
           working-dir: infrastructure
           output-file: README.md
           output-method: inject
-          git-push: "true"
+          # Do not silently push docs commits to main; surface the diff in PRs.
+          git-push: "false"
