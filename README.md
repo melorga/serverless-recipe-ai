@@ -12,7 +12,7 @@ An AI-powered recipe generator built on AWS serverless primitives.
 Client --(HTTPS, x-api-key)--> API Gateway (REST)
                                      |
                                      v
-                           Lambda (Python 3.12)
+                           Lambda (Python 3.13)
                                 /          \
                                v            v
                          DynamoDB       Amazon Bedrock
@@ -20,10 +20,13 @@ Client --(HTTPS, x-api-key)--> API Gateway (REST)
 ```
 
 - **API**: Amazon API Gateway (REST), API key + usage plan auth.
-- **Compute**: One AWS Lambda (`generate-recipe`), Python 3.12, AWS Lambda
+- **Compute**: One AWS Lambda (`generate-recipe`), Python 3.13, AWS Lambda
   Powertools, X-Ray tracing.
-- **AI**: Amazon Bedrock - default model `anthropic.claude-haiku-4-5`,
-  override with the `bedrock_model_id` Terraform variable.
+- **AI**: Amazon Bedrock - default model
+  `anthropic.claude-haiku-4-5-20251001-v1:0`, override with the
+  `bedrock_model_id` Terraform variable. Bedrock model ids follow the
+  format `anthropic.<api-name>-<release-date>-v<n>:0` - the bare
+  `anthropic.claude-haiku-4-5` will not resolve at `InvokeModel`.
 - **Storage**: DynamoDB (`PAY_PER_REQUEST`, TTL enabled).
 - **Observability**: CloudWatch Logs, CloudWatch Dashboard, X-Ray.
 - **IaC**: Terraform (>= 1.9, AWS provider ~> 6.0).
@@ -59,7 +62,7 @@ serverless-recipe-ai/
 - AWS account with Bedrock model access enabled for the chosen model id.
 - AWS CLI v2, configured.
 - Terraform >= 1.9, < 2.0.
-- Python 3.12.
+- Python 3.13.
 
 ## Deploy
 
@@ -71,11 +74,12 @@ make deploy-infra ENV=dev
 make deploy-backend
 ```
 
-To override the Bedrock model:
+To override the Bedrock model (use the canonical `<api-name>-<release-date>-v<n>:0`
+format):
 
 ```bash
 cd infrastructure
-terraform apply -var="bedrock_model_id=anthropic.claude-sonnet-4-5"
+terraform apply -var="bedrock_model_id=anthropic.claude-sonnet-4-5-20250929-v1:0"
 ```
 
 ## Calling the API
@@ -101,12 +105,12 @@ curl -X POST "$INVOKE_URL/recipes" \
 
 ## Lambda environment variables
 
-| Name                 | Purpose                                                    | Default                       |
-| -------------------- | ---------------------------------------------------------- | ----------------------------- |
-| `BEDROCK_MODEL_ID`   | Bedrock foundation model id.                               | `anthropic.claude-haiku-4-5`  |
-| `DYNAMODB_TABLE_NAME`| DynamoDB cache table name.                                 | set by Terraform              |
-| `ALLOWED_ORIGIN`     | Value used for `Access-Control-Allow-Origin` response hdr. | `*`                           |
-| `ENVIRONMENT`        | `dev` / `stage` / `prod` for log retention etc.            | `dev`                         |
+| Name                 | Purpose                                                    | Default                                       |
+| -------------------- | ---------------------------------------------------------- | --------------------------------------------- |
+| `BEDROCK_MODEL_ID`   | Bedrock foundation model id.                               | `anthropic.claude-haiku-4-5-20251001-v1:0`    |
+| `DYNAMODB_TABLE_NAME`| DynamoDB cache table name.                                 | set by Terraform                              |
+| `ALLOWED_ORIGIN`     | Value used for `Access-Control-Allow-Origin` response hdr. | `*`                                           |
+| `ENVIRONMENT`        | `dev` / `stage` / `prod` for log retention etc.            | `dev`                                         |
 
 ## Tests
 
