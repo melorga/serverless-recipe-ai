@@ -1,17 +1,3 @@
-terraform {
-  required_version = ">= 1.5"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-    archive = {
-      source  = "hashicorp/archive"
-      version = "~> 2.4"
-    }
-  }
-}
-
 provider "aws" {
   region = var.aws_region
 
@@ -27,7 +13,7 @@ provider "aws" {
 
 locals {
   function_name = "${var.environment}-recipe-generator"
-  
+
   common_tags = {
     Project     = "serverless-recipe-ai"
     Environment = var.environment
@@ -115,7 +101,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
         Action = [
           "bedrock:InvokeModel"
         ]
-        Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+        Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_model_id}"
       },
       {
         Effect = "Allow"
@@ -133,7 +119,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
 resource "aws_cloudwatch_log_group" "lambda_logs" {
   name              = "/aws/lambda/${local.function_name}"
   retention_in_days = var.environment == "prod" ? 30 : 7
-  
+
   tags = local.common_tags
 }
 
@@ -148,18 +134,19 @@ data "archive_file" "lambda_zip" {
 resource "aws_lambda_function" "recipe_generator" {
   filename         = data.archive_file.lambda_zip.output_path
   function_name    = local.function_name
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "generate-recipe.lambda_function.lambda_handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "generate-recipe.lambda_function.lambda_handler"
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
-  runtime         = "python3.11"
-  timeout         = 30
-  memory_size     = 512
+  runtime          = "python3.12"
+  timeout          = 30
+  memory_size      = 512
 
   environment {
     variables = {
-      DYNAMODB_TABLE = aws_dynamodb_table.recipe_cache.name
-      ENVIRONMENT    = var.environment
-      BEDROCK_MODEL  = "anthropic.claude-3-sonnet-20240229-v1:0"
+      DYNAMODB_TABLE_NAME = aws_dynamodb_table.recipe_cache.name
+      ENVIRONMENT         = var.environment
+      BEDROCK_MODEL_ID    = var.bedrock_model_id
+      ALLOWED_ORIGIN      = var.allowed_origin
     }
   }
 
@@ -194,15 +181,16 @@ resource "aws_api_gateway_resource" "recipes" {
   path_part   = "recipes"
 }
 
-# API Gateway Method
+# API Gateway Method - require an API key (lightweight auth for a portfolio demo)
 resource "aws_api_gateway_method" "recipes_post" {
-  rest_api_id   = aws_api_gateway_rest_api.recipe_api.id
-  resource_id   = aws_api_gateway_resource.recipes.id
-  http_method   = "POST"
-  authorization = "NONE"
-  
+  rest_api_id      = aws_api_gateway_rest_api.recipe_api.id
+  resource_id      = aws_api_gateway_resource.recipes.id
+  http_method      = "POST"
+  authorization    = "NONE"
+  api_key_required = true
+
   request_validator_id = aws_api_gateway_request_validator.recipe_validator.id
-  
+
   request_models = {
     "application/json" = aws_api_gateway_model.recipe_request.name
   }
@@ -211,8 +199,8 @@ resource "aws_api_gateway_method" "recipes_post" {
 # Request Validator
 resource "aws_api_gateway_request_validator" "recipe_validator" {
   name                        = "${var.environment}-recipe-validator"
-  rest_api_id                = aws_api_gateway_rest_api.recipe_api.id
-  validate_request_body      = true
+  rest_api_id                 = aws_api_gateway_rest_api.recipe_api.id
+  validate_request_body       = true
   validate_request_parameters = true
 }
 
@@ -223,7 +211,7 @@ resource "aws_api_gateway_model" "recipe_request" {
   content_type = "application/json"
 
   schema = jsonencode({
-    type = "object"
+    type     = "object"
     required = ["ingredients"]
     properties = {
       ingredients = {
@@ -246,7 +234,7 @@ resource "aws_api_gateway_model" "recipe_request" {
         }
       }
       serving_size = {
-        type = "integer"
+        type    = "integer"
         minimum = 1
         maximum = 12
       }
@@ -261,8 +249,8 @@ resource "aws_api_gateway_integration" "recipes_post" {
   http_method = aws_api_gateway_method.recipes_post.http_method
 
   integration_http_method = "POST"
-  type                   = "AWS_PROXY"
-  uri                    = aws_lambda_function.recipe_generator.invoke_arn
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.recipe_generator.invoke_arn
 }
 
 # Lambda permission for API Gateway
@@ -288,6 +276,7 @@ resource "aws_api_gateway_deployment" "recipe_api" {
       aws_api_gateway_resource.recipes.id,
       aws_api_gateway_method.recipes_post.id,
       aws_api_gateway_integration.recipes_post.id,
+      aws_api_gateway_method.recipes_post.api_key_required,
     ]))
   }
 
@@ -329,8 +318,45 @@ resource "aws_api_gateway_stage" "recipe_api" {
 resource "aws_cloudwatch_log_group" "api_gateway_logs" {
   name              = "/aws/apigateway/${aws_api_gateway_rest_api.recipe_api.name}"
   retention_in_days = var.environment == "prod" ? 30 : 7
-  
+
   tags = local.common_tags
+}
+
+# API Key + Usage Plan (lightweight auth for portfolio demo)
+resource "aws_api_gateway_api_key" "default" {
+  name        = "${var.environment}-recipe-api-key"
+  description = "Default API key for the recipe API."
+  enabled     = true
+
+  tags = local.common_tags
+}
+
+resource "aws_api_gateway_usage_plan" "default" {
+  name        = "${var.environment}-recipe-usage-plan"
+  description = "Default usage plan: monthly quota and per-second throttle."
+
+  api_stages {
+    api_id = aws_api_gateway_rest_api.recipe_api.id
+    stage  = aws_api_gateway_stage.recipe_api.stage_name
+  }
+
+  quota_settings {
+    limit  = var.api_quota_limit
+    period = "MONTH"
+  }
+
+  throttle_settings {
+    rate_limit  = var.api_throttle_rate_limit
+    burst_limit = var.api_throttle_burst_limit
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_api_gateway_usage_plan_key" "default" {
+  key_id        = aws_api_gateway_api_key.default.id
+  key_type      = "API_KEY"
+  usage_plan_id = aws_api_gateway_usage_plan.default.id
 }
 
 # CloudWatch Dashboard
