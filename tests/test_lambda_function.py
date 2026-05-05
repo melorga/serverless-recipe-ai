@@ -1,11 +1,23 @@
 """Tests for backend/generate-recipe/lambda_function.py.
 
 These deliberately avoid invoking AWS; they exercise pure-Python helpers and
-guard against regressions of the deprecated Claude 3 Sonnet model id.
+guard against regressions of deprecated Claude model ids.
 """
 
 import importlib
 import json
+from pathlib import Path
+
+
+DEPRECATED_MODEL_IDS = (
+    "claude-3-sonnet-20240229",
+    "claude-3-haiku-20240307",
+    "claude-3-5-haiku-20241022",
+    "claude-3-7-sonnet-20250219",
+    "claude-3-5-sonnet-20240620",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-opus-20240229",
+)
 
 
 def _reload():
@@ -17,9 +29,17 @@ def _reload():
 def test_default_bedrock_model_id_is_haiku_4_5(monkeypatch):
     monkeypatch.delenv("BEDROCK_MODEL_ID", raising=False)
     mod = _reload()
-    assert mod.BEDROCK_MODEL_ID == "anthropic.claude-haiku-4-5"
-    # Regression: must not fall back to the deprecated model.
-    assert "claude-3-sonnet-20240229" not in mod.BEDROCK_MODEL_ID
+    assert mod.BEDROCK_MODEL_ID == "anthropic.claude-haiku-4-5-20251001-v1:0"
+    # Regression: must not fall back to any deprecated Claude model.
+    for deprecated in DEPRECATED_MODEL_IDS:
+        assert deprecated not in mod.BEDROCK_MODEL_ID
+
+
+def test_no_deprecated_model_ids_in_source():
+    """Guard against deprecated Claude model ids appearing anywhere in the file."""
+    source = Path(__file__).read_text()
+    for deprecated in DEPRECATED_MODEL_IDS:
+        assert deprecated not in source.replace("DEPRECATED_MODEL_IDS", "")
 
 
 def test_bedrock_model_id_overridable(monkeypatch):

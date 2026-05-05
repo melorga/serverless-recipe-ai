@@ -24,7 +24,7 @@ dynamodb = boto3.resource('dynamodb', region_name=os.environ.get('AWS_REGION', '
 
 # Environment variables
 DYNAMODB_TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME', os.environ.get('DYNAMODB_TABLE', 'recipe-ai-recipes'))
-BEDROCK_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-haiku-4-5')
+BEDROCK_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-haiku-4-5-20251001-v1:0')
 ALLOWED_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '*')
 
 # Standard CORS / response headers

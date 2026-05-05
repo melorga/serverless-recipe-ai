@@ -30,7 +30,7 @@ variable "certificate_arn" {
 variable "bedrock_model_id" {
   description = "Amazon Bedrock foundation model id used by the Lambda."
   type        = string
-  default     = "anthropic.claude-haiku-4-5"
+  default     = "anthropic.claude-haiku-4-5-20251001-v1:0"
 }
 
 variable "allowed_origin" {
