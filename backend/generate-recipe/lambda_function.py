@@ -6,8 +6,8 @@ import json
 import os
 import boto3
 import uuid
-from datetime import datetime
-from typing import Dict, Any, Optional, List
+from datetime import datetime, timezone
+from typing import Dict, Any, List
 from aws_lambda_powertools import Logger, Tracer, Metrics
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from aws_lambda_powertools.logging import correlation_paths
@@ -23,8 +23,17 @@ bedrock_runtime = boto3.client('bedrock-runtime', region_name=os.environ.get('AW
 dynamodb = boto3.resource('dynamodb', region_name=os.environ.get('AWS_REGION', 'us-east-1'))
 
 # Environment variables
-DYNAMODB_TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME', 'recipe-ai-recipes')
-BEDROCK_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-3-sonnet-20240229-v1:0')
+DYNAMODB_TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME', os.environ.get('DYNAMODB_TABLE', 'recipe-ai-recipes'))
+BEDROCK_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-haiku-4-5')
+ALLOWED_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '*')
+
+# Standard CORS / response headers
+RESPONSE_HEADERS = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization,x-api-key',
+    'Access-Control-Allow-Methods': 'POST,OPTIONS',
+}
 
 # DynamoDB table
 table = dynamodb.Table(DYNAMODB_TABLE_NAME)
@@ -32,20 +41,20 @@ table = dynamodb.Table(DYNAMODB_TABLE_NAME)
 
 class RecipeGenerator:
     """Recipe generation using Amazon Bedrock."""
-    
+
     def __init__(self):
         self.model_id = BEDROCK_MODEL_ID
-    
+
     @tracer.capture_method
     def generate_recipe(self, ingredients: List[str], dietary_restrictions: List[str] = None,
-                       cuisine_type: str = None, meal_type: str = None, 
+                       cuisine_type: str = None, meal_type: str = None,
                        difficulty: str = "medium") -> Dict[str, Any]:
         """Generate a recipe using Amazon Bedrock."""
-        
+
         # Build the prompt
         prompt = self._build_prompt(ingredients, dietary_restrictions, cuisine_type, meal_type, difficulty)
-        
-        # Prepare the request body for Bedrock
+
+        # Prepare the request body for Bedrock (Anthropic messages API on Bedrock)
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 2000,
@@ -58,7 +67,7 @@ class RecipeGenerator:
             "temperature": 0.7,
             "top_p": 0.9
         }
-        
+
         try:
             # Call Bedrock
             response = bedrock_runtime.invoke_model(
@@ -67,46 +76,46 @@ class RecipeGenerator:
                 accept='application/json',
                 body=json.dumps(request_body)
             )
-            
+
             # Parse response
             response_body = json.loads(response['body'].read())
             generated_text = response_body['content'][0]['text']
-            
+
             # Parse the generated recipe
             recipe = self._parse_recipe_response(generated_text)
-            
+
             metrics.add_metric(name="RecipeGenerated", unit=MetricUnit.Count, value=1)
-            
+
             return recipe
-            
+
         except Exception as e:
             logger.error(f"Error generating recipe: {str(e)}")
             metrics.add_metric(name="RecipeGenerationError", unit=MetricUnit.Count, value=1)
             raise
-    
+
     def _build_prompt(self, ingredients: List[str], dietary_restrictions: List[str] = None,
-                     cuisine_type: str = None, meal_type: str = None, 
+                     cuisine_type: str = None, meal_type: str = None,
                      difficulty: str = "medium") -> str:
         """Build the prompt for recipe generation."""
-        
+
         ingredients_str = ", ".join(ingredients)
-        
+
         prompt = f"""Generate a detailed recipe using the following ingredients: {ingredients_str}
 
 Requirements:
 - Difficulty level: {difficulty}
 """
-        
+
         if dietary_restrictions:
             restrictions_str = ", ".join(dietary_restrictions)
             prompt += f"- Dietary restrictions: {restrictions_str}\n"
-        
+
         if cuisine_type:
             prompt += f"- Cuisine type: {cuisine_type}\n"
-        
+
         if meal_type:
             prompt += f"- Meal type: {meal_type}\n"
-        
+
         prompt += """
 Please provide the recipe in the following JSON format:
 {
@@ -141,30 +150,30 @@ Please provide the recipe in the following JSON format:
 
 Please ensure all ingredients from the input list are used in the recipe where possible.
 """
-        
+
         return prompt
-    
+
     def _parse_recipe_response(self, response_text: str) -> Dict[str, Any]:
         """Parse the AI response into a structured recipe."""
-        
+
         try:
             # Find JSON in the response
             start_idx = response_text.find('{')
             end_idx = response_text.rfind('}') + 1
-            
+
             if start_idx == -1 or end_idx == 0:
                 raise ValueError("No JSON found in response")
-            
+
             json_str = response_text[start_idx:end_idx]
             recipe = json.loads(json_str)
-            
+
             # Add metadata
             recipe['id'] = str(uuid.uuid4())
-            recipe['created_at'] = datetime.utcnow().isoformat()
+            recipe['created_at'] = datetime.now(timezone.utc).isoformat()
             recipe['source'] = 'ai_generated'
-            
+
             return recipe
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse recipe JSON: {str(e)}")
             # Return a fallback recipe structure
@@ -172,10 +181,10 @@ Please ensure all ingredients from the input list are used in the recipe where p
         except Exception as e:
             logger.error(f"Error parsing recipe response: {str(e)}")
             raise
-    
+
     def _create_fallback_recipe(self, response_text: str) -> Dict[str, Any]:
         """Create a fallback recipe structure when JSON parsing fails."""
-        
+
         return {
             'id': str(uuid.uuid4()),
             'title': 'AI Generated Recipe',
@@ -191,7 +200,7 @@ Please ensure all ingredients from the input list are used in the recipe where p
             'nutrition': {},
             'tags': ['ai-generated'],
             'tips': [],
-            'created_at': datetime.utcnow().isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
             'source': 'ai_generated'
         }
 
@@ -201,36 +210,31 @@ Please ensure all ingredients from the input list are used in the recipe where p
 @metrics.log_metrics
 def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict[str, Any]:
     """Lambda handler for recipe generation."""
-    
+
     try:
         # Parse request body
         body = json.loads(event.get('body', '{}'))
-        
+
         # Extract parameters
         ingredients = body.get('ingredients', [])
         dietary_restrictions = body.get('dietary_restrictions', [])
-        cuisine_type = body.get('cuisine_type')
+        cuisine_type = body.get('cuisine_type') or body.get('cuisine')
         meal_type = body.get('meal_type')
         difficulty = body.get('difficulty', 'medium')
         save_to_db = body.get('save_to_db', True)
-        
+
         # Validate inputs
         if not ingredients:
             return {
                 'statusCode': 400,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-                    'Access-Control-Allow-Methods': 'POST,OPTIONS'
-                },
+                'headers': RESPONSE_HEADERS,
                 'body': json.dumps({
                     'error': 'Ingredients list is required'
                 })
             }
-        
+
         logger.info(f"Generating recipe with ingredients: {ingredients}")
-        
+
         # Generate recipe
         generator = RecipeGenerator()
         recipe = generator.generate_recipe(
@@ -240,7 +244,7 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict[str, A
             meal_type=meal_type,
             difficulty=difficulty
         )
-        
+
         # Save to DynamoDB if requested
         if save_to_db:
             try:
@@ -250,30 +254,20 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict[str, A
             except Exception as e:
                 logger.error(f"Failed to save recipe to DynamoDB: {str(e)}")
                 # Don't fail the request if DB save fails
-        
+
         return {
             'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-                'Access-Control-Allow-Methods': 'POST,OPTIONS'
-            },
+            'headers': RESPONSE_HEADERS,
             'body': json.dumps(recipe)
         }
-        
+
     except Exception as e:
         logger.error(f"Error in lambda handler: {str(e)}")
         metrics.add_metric(name="LambdaError", unit=MetricUnit.Count, value=1)
-        
+
         return {
             'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-                'Access-Control-Allow-Methods': 'POST,OPTIONS'
-            },
+            'headers': RESPONSE_HEADERS,
             'body': json.dumps({
                 'error': 'Internal server error'
             })
