@@ -1,182 +1,137 @@
 # Serverless Recipe AI
 
-An AI-powered recipe recommendation system built with AWS serverless technologies.
+> **Status:** single-Lambda portfolio demo. One Python Lambda behind API
+> Gateway, DynamoDB for caching, Amazon Bedrock for generation. There is
+> no frontend, no Cognito, no multi-service backend in this repo.
+
+An AI-powered recipe generator built on AWS serverless primitives.
 
 ## Architecture
 
-- **Frontend**: React web application hosted on S3/CloudFront
-- **API**: AWS API Gateway with Lambda functions
-- **AI/ML**: Amazon Bedrock for recipe generation
-- **Database**: DynamoDB for storing recipes and user preferences
-- **Authentication**: Amazon Cognito
-- **Infrastructure**: Terraform for Infrastructure as Code
+```
+Client --(HTTPS, x-api-key)--> API Gateway (REST)
+                                     |
+                                     v
+                           Lambda (Python 3.13)
+                                /          \
+                               v            v
+                         DynamoDB       Amazon Bedrock
+                         (cache)        (Claude Haiku 4.5)
+```
 
-## Features
-
-- 🤖 AI-powered recipe generation using Amazon Bedrock
-- 📱 Responsive web interface
-- 🔍 Recipe search and filtering
-- 💾 Save favorite recipes
-- 👤 User authentication and profiles
-- 🏷️ Ingredient-based recommendations
-- 📊 Analytics and usage tracking
+- **API**: Amazon API Gateway (REST), API key + usage plan auth.
+- **Compute**: One AWS Lambda (`generate-recipe`), Python 3.13, AWS Lambda
+  Powertools, X-Ray tracing.
+- **AI**: Amazon Bedrock - default model
+  `anthropic.claude-haiku-4-5-20251001-v1:0`, override with the
+  `bedrock_model_id` Terraform variable. Bedrock model ids follow the
+  format `anthropic.<api-name>-<release-date>-v<n>:0` - the bare
+  `anthropic.claude-haiku-4-5` will not resolve at `InvokeModel`.
+- **Storage**: DynamoDB (`PAY_PER_REQUEST`, TTL enabled).
+- **Observability**: CloudWatch Logs, CloudWatch Dashboard, X-Ray.
+- **IaC**: Terraform (>= 1.9, AWS provider ~> 6.0).
 
 ## Project Structure
 
 ```
 serverless-recipe-ai/
-├── infrastructure/          # Terraform configurations
-│   ├── api-gateway/
-│   ├── lambda/
-│   ├── dynamodb/
-│   └── cognito/
-├── backend/                 # Lambda functions
-│   ├── get-recipes/
-│   ├── generate-recipe/
-│   ├── save-recipe/
-│   └── user-preferences/
-├── frontend/                # React application
-│   ├── src/
-│   ├── public/
-│   └── package.json
-├── tests/                   # Test files
-└── docs/                    # Documentation
+|-- backend/
+|   `-- generate-recipe/
+|       |-- lambda_function.py
+|       `-- requirements.txt
+|-- infrastructure/        # Terraform
+|   |-- versions.tf
+|   |-- variables.tf
+|   |-- main.tf
+|   `-- outputs.tf
+|-- tests/                 # pytest suite
+|   |-- conftest.py
+|   |-- test_lambda_function.py
+|   `-- requirements.txt
+|-- .github/
+|   |-- workflows/ci.yml
+|   `-- dependabot.yml
+|-- Makefile
+|-- CODEOWNERS
+|-- SECURITY.md
+`-- README.md
 ```
 
-## Tech Stack
+## Prerequisites
 
-### Backend
-- **Runtime**: Python 3.11
-- **Framework**: AWS Lambda with Powertools
-- **AI/ML**: Amazon Bedrock (Claude/Titan models)
-- **Database**: Amazon DynamoDB
-- **API**: Amazon API Gateway (REST)
-- **Auth**: Amazon Cognito
+- AWS account with Bedrock model access enabled for the chosen model id.
+- AWS CLI v2, configured.
+- Terraform >= 1.9, < 2.0.
+- Python 3.13.
 
-### Frontend
-- **Framework**: React 18 with TypeScript
-- **Styling**: Tailwind CSS
-- **State Management**: React Query + Context API
-- **Build Tool**: Vite
-- **Deployment**: AWS S3 + CloudFront
-
-### Infrastructure
-- **IaC**: Terraform
-- **CI/CD**: GitHub Actions
-- **Monitoring**: CloudWatch + X-Ray
-
-## Getting Started
-
-### Prerequisites
-
-- AWS CLI configured
-- Terraform >= 1.5.7
-- Node.js >= 18
-- Python 3.11
-
-### Local Development
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/melorga/serverless-recipe-ai.git
-   cd serverless-recipe-ai
-   ```
-
-2. **Deploy infrastructure**
-   ```bash
-   cd infrastructure
-   terraform init
-   terraform plan
-   terraform apply
-   ```
-
-3. **Deploy backend functions**
-   ```bash
-   cd ../backend
-   # Install dependencies and deploy
-   make deploy
-   ```
-
-4. **Start frontend development server**
-   ```bash
-   cd ../frontend
-   npm install
-   npm run dev
-   ```
-
-## API Endpoints
-
-- `GET /recipes` - List recipes with filtering
-- `POST /recipes/generate` - Generate new recipe with AI
-- `POST /recipes` - Save a recipe
-- `DELETE /recipes/{id}` - Delete a recipe
-- `GET /user/preferences` - Get user preferences
-- `PUT /user/preferences` - Update user preferences
-
-## Environment Variables
-
-### Backend
-- `BEDROCK_MODEL_ID` - Amazon Bedrock model identifier
-- `DYNAMODB_TABLE_NAME` - DynamoDB table name
-- `COGNITO_USER_POOL_ID` - Cognito User Pool ID
-
-### Frontend
-- `VITE_API_GATEWAY_URL` - API Gateway endpoint
-- `VITE_COGNITO_USER_POOL_ID` - Cognito User Pool ID
-- `VITE_COGNITO_CLIENT_ID` - Cognito Client ID
-
-## Testing
+## Deploy
 
 ```bash
-# Backend tests
-cd backend
-python -m pytest
+# 1. Provision infra (creates DynamoDB, IAM, Lambda, API Gateway, API key).
+make deploy-infra ENV=dev
 
-# Frontend tests
-cd frontend
-npm test
-
-# Integration tests
-make test-integration
+# 2. (Re)package the Lambda zip; Terraform handles the upload via archive_file.
+make deploy-backend
 ```
 
-## Deployment
+To override the Bedrock model (use the canonical `<api-name>-<release-date>-v<n>:0`
+format):
 
-The project uses GitHub Actions for CI/CD:
+```bash
+cd infrastructure
+terraform apply -var="bedrock_model_id=anthropic.claude-sonnet-4-5-20250929-v1:0"
+```
 
-1. **Push to main branch** triggers production deployment
-2. **Pull requests** trigger staging environment deployment
-3. **Infrastructure changes** are planned and applied automatically
+## Calling the API
 
-## Monitoring
+The `POST /recipes` endpoint requires the `x-api-key` header. Retrieve the
+key value (Terraform only outputs the id):
 
-- **CloudWatch Logs** for Lambda function logs
-- **X-Ray Tracing** for distributed tracing
-- **CloudWatch Metrics** for API and function metrics
-- **DynamoDB Metrics** for database performance
+```bash
+KEY_ID=$(terraform -chdir=infrastructure output -raw api_key_id)
+API_KEY=$(aws apigateway get-api-key --api-key "$KEY_ID" --include-value --query value --output text)
+INVOKE_URL=$(terraform -chdir=infrastructure output -raw api_gateway_invoke_url)
 
-## Cost Optimization
+curl -X POST "$INVOKE_URL/recipes" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{
+        "ingredients": ["chicken", "rice", "lemon"],
+        "cuisine": "mediterranean",
+        "dietary_restrictions": ["gluten-free"],
+        "serving_size": 4
+      }'
+```
 
-- DynamoDB On-Demand billing
-- Lambda Provisioned Concurrency only for production
-- CloudFront caching for static assets
-- S3 Intelligent Tiering
+## Lambda environment variables
 
-## Security
+| Name                 | Purpose                                                    | Default                                       |
+| -------------------- | ---------------------------------------------------------- | --------------------------------------------- |
+| `BEDROCK_MODEL_ID`   | Bedrock foundation model id.                               | `anthropic.claude-haiku-4-5-20251001-v1:0`    |
+| `DYNAMODB_TABLE_NAME`| DynamoDB cache table name.                                 | set by Terraform                              |
+| `ALLOWED_ORIGIN`     | Value used for `Access-Control-Allow-Origin` response hdr. | `*`                                           |
+| `ENVIRONMENT`        | `dev` / `stage` / `prod` for log retention etc.            | `dev`                                         |
 
-- Cognito authentication for all API endpoints
-- IAM roles with least privilege principles
-- VPC Lambda functions for enhanced security
-- Encryption at rest and in transit
+## Tests
 
-## Contributing
+```bash
+make test
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+The suite imports the Lambda module directly and asserts behaviour
+without hitting AWS. The default model id assertion is a regression
+guard against re-introducing deprecated Claude 3 Sonnet.
+
+## Security notes
+
+- API key + usage plan provides quota and throttle, not identity. For a
+  real product, swap in Cognito or a JWT authorizer.
+- Lambda execution role is scoped to the specific Bedrock model ARN, the
+  one DynamoDB table, and X-Ray.
+- CloudWatch log retention is 30 days for `prod`, 7 days otherwise.
+
+See `SECURITY.md` for how to report vulnerabilities.
 
 ## License
 
-This project is licensed under the MIT License.
+MIT - see `LICENSE`.

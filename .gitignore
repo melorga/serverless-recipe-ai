@@ -4,7 +4,6 @@
 *.tfvars
 *.tfplan
 .terraform/
-.terraform.lock.hcl
 crash.log
 override.tf
 override.tf.json
@@ -31,20 +30,20 @@ Thumbs.db
 # Runtime
 node_modules/
 venv/
+.venv/
 __pycache__/
 *.pyc
 .env
 .env.local
 
-# Archives
+# Archives / build outputs
 *.zip
 *.tar.gz
+lambda_function.zip
 
 # Test outputs
 test-results/
 coverage/
-
-# Documentation
-*.md
-!README.md
-!docs/README.md
+.coverage
+coverage.xml
+.pytest_cache/

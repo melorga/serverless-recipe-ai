@@ -22,3 +22,13 @@ output "cloudwatch_dashboard_url" {
   description = "URL of the CloudWatch dashboard"
   value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.recipe_api.dashboard_name}"
 }
+
+output "api_key_id" {
+  description = "ID of the default API key. Retrieve the value with: aws apigateway get-api-key --api-key <id> --include-value"
+  value       = aws_api_gateway_api_key.default.id
+}
+
+output "bedrock_model_id" {
+  description = "Bedrock foundation model id used by the Lambda."
+  value       = var.bedrock_model_id
+}
