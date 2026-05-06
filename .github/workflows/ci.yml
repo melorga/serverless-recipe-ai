@@ -1,4 +1,3 @@
----
 name: CI/CD Pipeline
 
 on:
@@ -19,17 +18,15 @@ concurrency:
 jobs:
   terraform:
     name: Terraform CI/CD
-    uses: melorga/gha-workflows/.github/workflows/terraform.yml@claude/audit-portfolio-repos-QH4PL
+    # Pinned to a specific commit on gha-workflows for reproducibility.
+    # Bump after merging the gha-workflows audit branch and cutting a tag.
+    uses: melorga/gha-workflows/.github/workflows/terraform.yml@f076d348da88dea26498a45ce537e3b074d6aa4c
     with:
-      terraform_version: '1.9.8'
+      terraform_version: '1.15.1'
       working_directory: './infrastructure'
       environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
-      # Auto-apply disabled on main: promote via a GitHub Environment with
-      # required reviewers instead of letting CI yolo to prod.
-      auto_apply: false
-    secrets:
       aws_role_arn: ${{ secrets.AWS_OIDC_ROLE_ARN }}
-      AWS_REGION: ${{ secrets.AWS_REGION }}
+      aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
   python-tests:
     name: Python Tests
@@ -75,7 +72,7 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
@@ -88,9 +85,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
-          terraform_version: '1.9.8'
+          terraform_version: '1.15.1'
 
       - name: Generate terraform-docs
         uses: terraform-docs/gh-actions@v1.3.0
