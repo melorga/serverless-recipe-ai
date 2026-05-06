@@ -10,6 +10,10 @@ permissions:
   id-token: write
   contents: read
   security-events: write
+  # Required because the reusable terraform workflow comments the plan
+  # back onto the PR. Without this the caller grants pull-requests:none
+  # implicitly and GitHub rejects the run with a startup_failure.
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
