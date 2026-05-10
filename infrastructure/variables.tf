@@ -15,18 +15,6 @@ variable "environment" {
   }
 }
 
-variable "domain_name" {
-  description = "Custom domain name for the API (optional)"
-  type        = string
-  default     = null
-}
-
-variable "certificate_arn" {
-  description = "ACM certificate ARN for custom domain (required if domain_name is set)"
-  type        = string
-  default     = null
-}
-
 variable "bedrock_model_id" {
   description = "Amazon Bedrock foundation model id used by the Lambda."
   type        = string

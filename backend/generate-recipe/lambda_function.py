@@ -174,7 +174,7 @@ Please ensure all ingredients from the input list are used in the recipe where p
 
             return recipe
 
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, ValueError) as e:
             logger.error(f"Failed to parse recipe JSON: {str(e)}")
             # Return a fallback recipe structure
             return self._create_fallback_recipe(response_text)

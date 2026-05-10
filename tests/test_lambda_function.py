@@ -36,10 +36,15 @@ def test_default_bedrock_model_id_is_haiku_4_5(monkeypatch):
 
 
 def test_no_deprecated_model_ids_in_source():
-    """Guard against deprecated Claude model ids appearing anywhere in the file."""
-    source = Path(__file__).read_text()
+    """Guard against deprecated Claude model ids appearing in the lambda source."""
+    lambda_src = (
+        Path(__file__).resolve().parents[1]
+        / "backend"
+        / "generate-recipe"
+        / "lambda_function.py"
+    ).read_text()
     for deprecated in DEPRECATED_MODEL_IDS:
-        assert deprecated not in source.replace("DEPRECATED_MODEL_IDS", "")
+        assert deprecated not in lambda_src
 
 
 def test_bedrock_model_id_overridable(monkeypatch):

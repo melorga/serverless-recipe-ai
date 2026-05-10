@@ -10,6 +10,10 @@ permissions:
   id-token: write
   contents: read
   security-events: write
+  # Required because the reusable terraform workflow comments the plan
+  # back onto the PR. Without this the caller grants pull-requests:none
+  # implicitly and GitHub rejects the run with a startup_failure.
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,12 +24,12 @@ jobs:
     name: Terraform CI/CD
     # Pinned to a specific commit on gha-workflows for reproducibility.
     # Bump after merging the gha-workflows audit branch and cutting a tag.
-    uses: melorga/gha-workflows/.github/workflows/terraform.yml@f076d348da88dea26498a45ce537e3b074d6aa4c
+    uses: melorga/gha-workflows/.github/workflows/terraform.yml@2a72666971eb1e395de3fa03e1dc29cb58e04668
     with:
       terraform_version: '1.15.1'
       working_directory: './infrastructure'
       environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
-      aws_role_arn: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+      aws_role_arn: ${{ vars.AWS_OIDC_ROLE_ARN }}
       aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
   python-tests:
