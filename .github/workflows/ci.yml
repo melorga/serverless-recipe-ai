@@ -24,7 +24,7 @@ jobs:
     name: Terraform CI/CD
     # Pinned to a specific commit on gha-workflows for reproducibility.
     # Bump after merging the gha-workflows audit branch and cutting a tag.
-    uses: melorga/gha-workflows/.github/workflows/terraform.yml@2a72666971eb1e395de3fa03e1dc29cb58e04668
+    uses: melorga/gha-workflows/.github/workflows/terraform.yml@35859981195311643496aad9ccbcb58e187b3edb
     with:
       terraform_version: '1.15.1'
       working_directory: './infrastructure'
